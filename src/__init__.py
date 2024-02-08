@@ -1,10 +1,11 @@
-from ml.recsys.movielens.data import (
+from src.data.movielens import (
     DataCleaner,
-    DataSpliter,
     DataFetcher,
     DataLoader,
-    DataPrep,
+    DataSpliter,
     EnvInit,
+    FeatEngineer,
+    MovieLensDataset,
 )
 
 __all__ = [
@@ -12,6 +13,7 @@ __all__ = [
     "DataSpliter",
     "DataFetcher",
     "DataLoader",
-    "DataPrep",
+    "FeatEngineer",
+    "MovieLensDataset",
     "EnvInit",
 ]
