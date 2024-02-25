@@ -1,0 +1,26 @@
+{
+    "gmf-v0.1.0": {
+        "embedding_dim": 8,
+        "lr": 1e-3,
+        "batch": 256,
+        "epoches": 20
+    },
+    "gmf-v0.1.1": {
+        "embedding_dim": 128,
+        "lr": 1e-3,
+        "batch": 256,
+        "epoches": 20
+    },
+    "mlp-v0.1.0": {
+        "embedding_dim": 128,
+        "lr": 1e-3,
+        "batch": 256,
+        "layers": [
+            64,
+            32,
+            16,
+            8
+        ],
+        "epoches": 20
+    }
+}

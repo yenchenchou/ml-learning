@@ -35,3 +35,7 @@ __pycache__
 # python related
 .ipynb_checkpoints
 .venv
+
+# big data
+data/2017-ncf-paper-data
+data/ml-1m
