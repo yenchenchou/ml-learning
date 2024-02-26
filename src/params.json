@@ -1,26 +1,49 @@
 {
     "gmf-v0.1.0": {
-        "embedding_dim": 8,
+        "neg_samp_ratio": 4,
+        "mf_dim": 8,
         "lr": 1e-3,
         "batch": 256,
-        "epoches": 20
-    },
-    "gmf-v0.1.1": {
-        "embedding_dim": 128,
-        "lr": 1e-3,
-        "batch": 256,
-        "epoches": 20
+        "epoches": 20,
+        "reg_layers": [
+            0,
+            0
+        ]        
     },
     "mlp-v0.1.0": {
-        "embedding_dim": 128,
+        "neg_samp_ratio": 4,
         "lr": 1e-3,
         "batch": 256,
-        "layers": [
+        "mlp_layers": [
             64,
             32,
             16,
             8
         ],
+        "reg_layers": [
+            0,
+            0
+        ],          
+        "epoches": 20
+    },
+    "ncf-v0.1.0": {
+        "neg_samp_ratio": 4,
+        "mf_dim": 8,
+        "lr": 1e-3,
+        "batch": 256,
+        "mlp_layers": [
+            64,
+            32,
+            16,
+            8
+        ],
+        "reg_layers": [
+            0,
+            0,
+            0,
+            0
+        ],        
         "epoches": 20
     }
+
 }

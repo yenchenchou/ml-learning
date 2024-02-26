@@ -55,9 +55,9 @@ if __name__ == "__main__":
             eval_data, batch_size=config["gmf-v0.1.0"]["batch"], shuffle=False
         )
         model = GMF(
-            num_user_embeddings=train_data.uniq_items.size,
-            num_item_embeddings=train_data.uniq_items.size,
-            embedding_dim=config["gmf-v0.1.0"]["embedding_dim"],
+            num_users=train_data.uniq_items.size,
+            num_items=train_data.uniq_items.size,
+            mf_dim=config["gmf-v0.1.0"]["embedding_dim"],
         )
         loss_fn = nn.BCELoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=config["gmf-v0.1.0"]["lr"])

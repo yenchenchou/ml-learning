@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.data.movielens import DataPrep, EnvInit, MovieLensDataset
-from src.models import GMF, MLP
+from src.models import GMF, MLP, NCF
 
 with open("src/params.json") as file:
     config = json.load(file)
@@ -16,39 +16,6 @@ with open("src/params.json") as file:
 env_init = EnvInit()
 device = env_init.available_device()
 seed = env_init.fix_seed(12345, device)
-
-
-# loss_fn = nn.BCELoss()
-# optimizer = torch.optim.Adam(model.parameters(), lr=config["gmf-v0.1.0"]["lr"])
-# model = model.to(device)
-# for epoch in range(config["gmf-v0.1.0"]["epoches"]):
-#     model.train()
-#     train_loss = 0
-#     train_num_batches = len(train_dataloader)
-#     train_pbar = tqdm(train_dataloader)
-#     for batch, (user_idxs, item_idxs, labels) in enumerate(train_pbar):
-#         optimizer.zero_grad()
-#         user_idxs = user_idxs.to(device)
-#         item_idxs = item_idxs.to(device)
-#         labels = labels.to(device)
-#         pred = model(user_idxs, item_idxs)
-#         loss = loss_fn(pred, labels)
-#         train_loss += loss.item()
-#         loss.backward()
-#         optimizer.step()
-#     train_loss /= train_num_batches
-#     model.eval()
-#     eval_num_batches = len(eval_dataloader)
-#     eval_loss = 0
-#     with torch.no_grad():
-#         for batch, (user_idxs, item_idxs, labels) in enumerate(eval_dataloader):
-#             user_idxs = user_idxs.to(device)
-#             item_idxs = item_idxs.to(device)
-#             labels = labels.to(device)
-#             pred = model(user_idxs, item_idxs)
-#             eval_loss += loss_fn(pred, labels).item()
-#     eval_loss /= eval_num_batches
-#     print(f"Train Avg loss: {train_loss}. Eval Avg loss: {eval_loss}")
 
 
 class Trainer:
@@ -100,7 +67,7 @@ if __name__ == "__main__":
         prog="Recommendation System Reimplementation on MovieLens"
     )
     parser.add_argument(
-        "--neg_sampling_ratio",
+        "--neg_samp_ratio",
         type=int,
         default=4,
         help="Specify the negative sampling ratio, negative : positive = 4 : 1 (default: 4)",
@@ -108,42 +75,55 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         type=str,
-        choices=["MLP", "GMF", "NCF"],
-        default="MLP",
+        choices=["mlp", "gmf", "ncf"],
+        default="mlp",
         help="Specify which model sampling ratio, negative : positive = 4 : 1 (default: MLP)",
+    )
+    parser.add_argument(
+        "--version",
+        type=str,
+        choices=["v0.1.0"],
+        default="v0.1.0",
+        help="Specify which model version",
     )
     args = parser.parse_args()
     prep = DataPrep()
     df_train, df_eval, df_test = prep()
-    train_data = MovieLensDataset(df=df_train, neg_sample_ratio=4)
-    eval_data = MovieLensDataset(df=df_eval, neg_sample_ratio=4)
-    test_data = MovieLensDataset(df=df_test, neg_sample_ratio=4)
-    train_dataloader = DataLoader(
-        train_data, batch_size=config["gmf-v0.1.0"]["batch"], shuffle=True
-    )
-    eval_dataloader = DataLoader(
-        eval_data, batch_size=config["gmf-v0.1.0"]["batch"], shuffle=False
-    )
-    if args.model == "GMF":
+    cfg = config[f"{args.model}-{args.version}"]
+    train_data = MovieLensDataset(df=df_train, neg_sample_ratio=cfg["neg_samp_ratio"])
+    eval_data = MovieLensDataset(df=df_eval, neg_sample_ratio=cfg["neg_samp_ratio"])
+    # test_data = MovieLensDataset(df=df_test, neg_sample_ratio=cfg["neg_samp_ratio"])
+    train_dataloader = DataLoader(train_data, batch_size=cfg["batch"], shuffle=True)
+    eval_dataloader = DataLoader(eval_data, batch_size=cfg["batch"], shuffle=False)
+    print(type(cfg["reg_layers"]))
+    if args.model == "gmf":
         model = GMF(
-            num_user_embeddings=train_data.uniq_items.size,
-            num_item_embeddings=train_data.uniq_items.size,
-            embedding_dim=config["gmf-v0.1.0"]["embedding_dim"],
+            num_users=train_data.uniq_users.size,
+            num_items=train_data.uniq_items.size,
+            mf_dim=cfg["mf_dim"],
+            reg_layers=cfg["reg_layers"],
         )
-    elif args.model == "MLP":
+    elif args.model == "mlp":
         model = MLP(
-            num_user_embeddings=train_data.uniq_items.size,
-            num_item_embeddings=train_data.uniq_items.size,
-            # embedding_dim=config["gmf-v0.1.0"]["embedding_dim"],
-            layers=config["mlp-v0.1.0"]["layers"],
+            num_users=train_data.uniq_users.size,
+            num_items=train_data.uniq_items.size,
+            mlp_layers=cfg["mlp_layers"],
+            reg_layers=cfg["reg_layers"],
         )
-        train = Trainer(
-            model=model,
-            criterion=nn.BCELoss(),
-            optimizer=torch.optim.Adam(
-                model.parameters(), lr=config["mlp-v0.1.0"]["lr"]
-            ),
-            device=device,
-            epoches=config["mlp-v0.1.0"]["epoches"],
+    elif args.model == "ncf":
+        model = NCF(
+            num_users=train_data.uniq_users.size,
+            num_items=train_data.uniq_items.size,
+            mf_dim=cfg["mf_dim"],
+            mlp_layers=cfg["mlp_layers"],
+            reg_layers=cfg["reg_layers"],
         )
-        train.fit(train_loader=train_dataloader, eval_loader=eval_dataloader)
+    print(model)
+    train = Trainer(
+        model=model,
+        criterion=nn.BCELoss(),
+        optimizer=torch.optim.Adam(model.parameters(), lr=cfg["lr"]),
+        device=device,
+        epoches=cfg["epoches"],
+    )
+    train.fit(train_loader=train_dataloader, eval_loader=eval_dataloader)
