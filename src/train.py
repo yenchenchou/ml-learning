@@ -5,6 +5,14 @@ import matplotlib.pyplot as plt
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from torchmetrics.retrieval import (
+    RetrievalHitRate,
+    RetrievalMRR,
+    RetrievalNormalizedDCG,
+    RetrievalPrecision,
+    RetrievalRecall,
+)
 from tqdm import tqdm
 
 from src.data.movielens import DataPrep, EnvInit, MovieLensDataset
@@ -16,15 +24,24 @@ with open("src/params.json") as file:
 env_init = EnvInit()
 device = env_init.available_device()
 seed = env_init.fix_seed(12345, device)
+writer = SummaryWriter("data/runs/gmf_v0.1.0")
 
 
 class Trainer:
-    def __init__(self, model, criterion, optimizer, device, epoches) -> None:
+    def __init__(
+        self, model, criterion, optimizer, device: str, epoches: int, top_k: int
+    ) -> None:
         self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
         self.epoches = epoches
         self.device = device
+        self.hit = RetrievalHitRate(top_k=top_k)
+        self.recall = RetrievalRecall(top_k=top_k)
+        self.precision = RetrievalPrecision(top_k=top_k, adaptive_k=True)
+        self.mrr = RetrievalMRR(top_k=top_k)
+        self.ndcg = RetrievalNormalizedDCG(top_k=top_k)
+        self.top_k = top_k
 
     def fit(self, train_loader: DataLoader, eval_loader: DataLoader) -> torch.Tensor:
         train_num_batch = len(train_loader)
@@ -48,6 +65,7 @@ class Trainer:
             self.model.eval()
             with torch.no_grad():
                 eval_loss = 0
+                preds_list = []
                 for user_idxs, item_idxs, target in eval_loader:
                     user_idxs = user_idxs.to(self.device)
                     item_idxs = item_idxs.to(self.device)
@@ -55,10 +73,44 @@ class Trainer:
                     preds = self.model(user_idxs, item_idxs)
                     loss = self.criterion(preds, target)
                     eval_loss += loss.item()
+                    preds_list.extend(preds)
                 eval_loss /= eval_num_batch
+                preds_list = torch.tensor(preds_list, dtype=torch.float32)
+                hitrate = self.hit(
+                    preds_list,
+                    eval_loader.dataset.labels,
+                    indexes=eval_loader.dataset.users.to(torch.long),
+                ).item()
+                precision = self.precision(
+                    preds_list,
+                    eval_loader.dataset.labels,
+                    indexes=eval_loader.dataset.users.to(torch.long),
+                ).item()
+                recall = self.recall(
+                    preds_list,
+                    eval_loader.dataset.labels,
+                    indexes=eval_loader.dataset.users.to(torch.long),
+                ).item()
+                mrr = self.mrr(
+                    preds_list,
+                    eval_loader.dataset.labels,
+                    indexes=eval_loader.dataset.users.to(torch.long),
+                ).item()
+                ndcg = self.precision(
+                    preds_list,
+                    eval_loader.dataset.labels,
+                    indexes=eval_loader.dataset.users.to(torch.long),
+                ).item()
 
             print(
-                f"Epoch: {epoch+1} -- Train Loss: {train_loss} -- Eval Loss: {eval_loss}"
+                f"Epoch: {epoch+1} "
+                + f"-- Train Loss: {train_loss:.6f} "
+                + f"-- Eval Loss: {eval_loss:.6f} "
+                + f"-- Eval HitRate@{self.top_k}: {hitrate:.6f} "
+                + f"-- Eval Precision@{self.top_k}: {precision:.6f} "
+                + f"-- Eval Recall@{self.top_k}: {recall:.6f} "
+                + f"-- Eval MRR@{self.top_k}: {mrr:.6f} "
+                + f"-- Eval NDCG@{self.top_k}: {ndcg:.6f}"
             )
 
 
@@ -95,7 +147,7 @@ if __name__ == "__main__":
     # test_data = MovieLensDataset(df=df_test, neg_sample_ratio=cfg["neg_samp_ratio"])
     train_dataloader = DataLoader(train_data, batch_size=cfg["batch"], shuffle=True)
     eval_dataloader = DataLoader(eval_data, batch_size=cfg["batch"], shuffle=False)
-    print(type(cfg["reg_layers"]))
+
     if args.model == "gmf":
         model = GMF(
             num_users=train_data.uniq_users.size,
@@ -125,5 +177,6 @@ if __name__ == "__main__":
         optimizer=torch.optim.Adam(model.parameters(), lr=cfg["lr"]),
         device=device,
         epoches=cfg["epoches"],
+        top_k=3,
     )
     train.fit(train_loader=train_dataloader, eval_loader=eval_dataloader)
