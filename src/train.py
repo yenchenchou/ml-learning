@@ -24,12 +24,19 @@ with open("src/params.json") as file:
 env_init = EnvInit()
 device = env_init.available_device()
 seed = env_init.fix_seed(12345, device)
-writer = SummaryWriter("data/runs/gmf_v0.1.0")
+writer = SummaryWriter(log_dir="data/runs/ncf_v0.1.0")
 
 
 class Trainer:
     def __init__(
-        self, model, criterion, optimizer, device: str, epoches: int, top_k: int
+        self,
+        model,
+        criterion,
+        optimizer,
+        device: str,
+        epoches: int,
+        top_k: int,
+        model_path: str,
     ) -> None:
         self.model = model
         self.criterion = criterion
@@ -42,14 +49,18 @@ class Trainer:
         self.mrr = RetrievalMRR(top_k=top_k)
         self.ndcg = RetrievalNormalizedDCG(top_k=top_k)
         self.top_k = top_k
+        self.model_path = model_path
 
     def fit(self, train_loader: DataLoader, eval_loader: DataLoader) -> torch.Tensor:
+        min_ndcg = float("inf")
         train_num_batch = len(train_loader)
         eval_num_batch = len(eval_loader)
         self.model = self.model.to(device)
         for epoch in range(self.epoches):
             train_loss = 0
             self.model.train()
+            for name, param in self.model.named_parameters():
+                writer.add_histogram(name, param.clone().cpu().data.numpy(), epoch)
             for user_idxs, item_idxs, target in tqdm(train_loader):
                 user_idxs = user_idxs.to(self.device)
                 item_idxs = item_idxs.to(self.device)
@@ -101,7 +112,19 @@ class Trainer:
                     eval_loader.dataset.labels,
                     indexes=eval_loader.dataset.users.to(torch.long),
                 ).item()
-
+            writer.add_scalar("Train/Loss", train_loss, epoch)
+            writer.add_scalar("Eval/Loss", eval_loss, epoch)
+            writer.add_scalar(f"Eval/HitRate@{self.top_k}", round(hitrate, 6), epoch)
+            writer.add_scalar(
+                f"Eval/Precision@{self.top_k}", round(precision, 6), epoch
+            )
+            writer.add_scalar(f"Eval/Recall@{self.top_k}", round(recall, 6), epoch)
+            writer.add_scalar(f"Eval/MRR@{self.top_k}", round(mrr, 6), epoch)
+            writer.add_scalar(f"Eval/NDCG@{self.top_k}", round(ndcg, 6), epoch)
+            if ndcg < min_ndcg:
+                min_ndcg = ndcg
+                torch.save(model.state_dict(), self.model_path)
+                print(f"Save model to {self.model_path}")
             print(
                 f"Epoch: {epoch+1} "
                 + f"-- Train Loss: {train_loss:.6f} "
@@ -171,6 +194,8 @@ if __name__ == "__main__":
             reg_layers=cfg["reg_layers"],
         )
     print(model)
+    user_idxs, item_idxs, target = next(iter(eval_dataloader))
+    writer.add_graph(model, (user_idxs, item_idxs), True)
     train = Trainer(
         model=model,
         criterion=nn.BCELoss(),
@@ -178,5 +203,7 @@ if __name__ == "__main__":
         device=device,
         epoches=cfg["epoches"],
         top_k=3,
+        model_path=f"data/models/{args.model}-v0.1.0.pt",
     )
     train.fit(train_loader=train_dataloader, eval_loader=eval_dataloader)
+    writer.close()
