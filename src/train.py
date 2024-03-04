@@ -52,7 +52,7 @@ class Trainer:
         self.model_path = model_path
 
     def fit(self, train_loader: DataLoader, eval_loader: DataLoader) -> torch.Tensor:
-        min_ndcg = float("inf")
+        best_ndcg = 0
         train_num_batch = len(train_loader)
         eval_num_batch = len(eval_loader)
         self.model = self.model.to(device)
@@ -121,8 +121,8 @@ class Trainer:
             writer.add_scalar(f"Eval/Recall@{self.top_k}", round(recall, 6), epoch)
             writer.add_scalar(f"Eval/MRR@{self.top_k}", round(mrr, 6), epoch)
             writer.add_scalar(f"Eval/NDCG@{self.top_k}", round(ndcg, 6), epoch)
-            if ndcg < min_ndcg:
-                min_ndcg = ndcg
+            if ndcg > best_ndcg:
+                best_ndcg = ndcg
                 torch.save(model.state_dict(), self.model_path)
                 print(f"Save model to {self.model_path}")
             print(
