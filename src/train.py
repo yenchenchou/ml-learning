@@ -1,5 +1,6 @@
 import argparse
 import json
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import torch
@@ -37,6 +38,7 @@ class Trainer:
         epoches: int,
         top_k: int,
         model_path: str,
+        reload_lookup: bool = False,
     ) -> None:
         self.model = model
         self.criterion = criterion
@@ -50,13 +52,25 @@ class Trainer:
         self.ndcg = RetrievalNormalizedDCG(top_k=top_k)
         self.top_k = top_k
         self.model_path = model_path
+        self.reload_lookup = reload_lookup
 
     def fit(self, train_loader: DataLoader, eval_loader: DataLoader) -> torch.Tensor:
         best_ndcg = 0
         train_num_batch = len(train_loader)
         eval_num_batch = len(eval_loader)
+        if self.reload_lookup:
+            if Path(self.model_path).is_file():
+                checkpoints = torch.load(self.model_path)
+                start_epoch = checkpoints["Epoch"] + 1
+                print(f"Resume Training, start from epoch: {start_epoch}")
+                self.model.load_state_dict(checkpoints["model_state_dict"])
+            else:
+                start_epoch = 1
+                print("Didn't find model checkpoint, start from scratch")
+        else:
+            start_epoch = 1
         self.model = self.model.to(device)
-        for epoch in range(self.epoches):
+        for epoch in range(start_epoch, self.epoches + 1):
             train_loss = 0
             self.model.train()
             for name, param in self.model.named_parameters():
@@ -121,20 +135,21 @@ class Trainer:
             writer.add_scalar(f"Eval/Recall@{self.top_k}", round(recall, 6), epoch)
             writer.add_scalar(f"Eval/MRR@{self.top_k}", round(mrr, 6), epoch)
             writer.add_scalar(f"Eval/NDCG@{self.top_k}", round(ndcg, 6), epoch)
+            model_dict = {
+                "eval_loss": eval_loss,
+                "Epoch": epoch,
+                f"HitRate@{self.top_k}": hitrate,
+                f"Precision@{self.top_k}": precision,
+                f"Recall@{self.top_k}": recall,
+                f"MRR@{self.top_k}": mrr,
+                f"NDCG@{self.top_k}": ndcg,
+            }
+            print(model_dict)
             if ndcg > best_ndcg:
+                model_dict.update({"model_state_dict": self.model.state_dict()})
                 best_ndcg = ndcg
-                torch.save(model.state_dict(), self.model_path)
+                torch.save(model_dict, self.model_path)
                 print(f"Save model to {self.model_path}")
-            print(
-                f"Epoch: {epoch+1} "
-                + f"-- Train Loss: {train_loss:.6f} "
-                + f"-- Eval Loss: {eval_loss:.6f} "
-                + f"-- Eval HitRate@{self.top_k}: {hitrate:.6f} "
-                + f"-- Eval Precision@{self.top_k}: {precision:.6f} "
-                + f"-- Eval Recall@{self.top_k}: {recall:.6f} "
-                + f"-- Eval MRR@{self.top_k}: {mrr:.6f} "
-                + f"-- Eval NDCG@{self.top_k}: {ndcg:.6f}"
-            )
 
 
 if __name__ == "__main__":
@@ -157,7 +172,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--version",
         type=str,
-        choices=["v0.1.0"],
         default="v0.1.0",
         help="Specify which model version",
     )
@@ -204,6 +218,7 @@ if __name__ == "__main__":
         epoches=cfg["epoches"],
         top_k=3,
         model_path=f"data/models/{args.model}-v0.1.0.pt",
+        reload_lookup=True,
     )
     train.fit(train_loader=train_dataloader, eval_loader=eval_dataloader)
     writer.close()

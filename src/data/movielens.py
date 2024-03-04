@@ -46,7 +46,7 @@ class DataFetcher:
                 "rating": pl.Int32,
                 "timestamp": pl.Int64,
             },
-            n_rows=100000,
+            # n_rows=1000,
         )
 
     def load_test_pos(self):
